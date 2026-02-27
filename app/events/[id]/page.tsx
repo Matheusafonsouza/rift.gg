@@ -1,183 +1,148 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import MatchHeader, { MatchHeaderData, GameResult } from "@/components/MatchHeader";
-import MatchMapsPanel from "@/components/MatchMapsPanel";
-import EventHistoryPanel, { PastMatchItem } from "@/components/EventHistoryPanel";
-import { getEventDetails, getSchedule } from "@/lib/lolesports/endpoints";
-import { teamColor, regionFlag } from "@/lib/lolesports/transforms";
-import type { LoLApiEventDetails, LoLApiScheduleEvent } from "@/lib/lolesports/api-types";
+import EventTopBanner from "@/components/EventTopBanner";
+import {
+  getLeagues,
+  getSchedule,
+  getTournamentsForLeague,
+} from "@/lib/lolesports/endpoints";
+import type {
+  LoLApiLeague,
+  LoLApiScheduleEvent,
+  LoLApiTournament,
+} from "@/lib/lolesports/api-types";
 
-function buildGameResults(ev: LoLApiEventDetails): GameResult[] {
-  const [t1, t2] = ev.match.teams;
-  return (ev.match.games ?? [])
-    .sort((a, b) => a.number - b.number)
-    .map((g) => {
-      const winnerEntry = g.teams.find((team) => (team.result?.gameWins ?? 0) > 0);
-      return {
-        number: g.number,
-        state: g.state,
-        winner: winnerEntry?.id === t1.id ? "team1"
-          : winnerEntry?.id === t2.id ? "team2"
-          : null,
-      };
-    });
+function formatTournamentDateRange(
+  startDate?: string,
+  endDate?: string,
+): string {
+  if (!startDate || !endDate) return "TBD";
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()))
+    return "TBD";
+
+  const startLabel = start.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const endLabel = end.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  return `${startLabel} – ${endLabel}`;
 }
 
-function buildMatchHeaderData(ev: LoLApiEventDetails): MatchHeaderData {
-  const [t1, t2] = ev.match.teams;
-  const count = ev.match.strategy.count;
-  const leagueRegion = ev.league.region ?? "";
-  const games = buildGameResults(ev);
-
-  return {
-    status:
-      ev.state === "inProgress" ? "live"
-      : ev.state === "completed" ? "completed"
-      : "upcoming",
-    league: ev.league.slug ?? ev.league.name,
-    eventName: ev.league.name,
-    stage: ev.blockName,
-    format: `Bo${count}` as MatchHeaderData["format"],
-    date: ev.startTime,
-    games: games.length > 0 ? games : undefined,
-    score1: t1.result?.gameWins,
-    score2: t2.result?.gameWins,
-    team1: {
-      name: t1.name,
-      shortName: t1.code,
-      image: t1.image || t1.alternativeImage,
-      regionFlag: regionFlag(t1.origin?.region ?? leagueRegion),
-      wins: t1.record?.wins ?? 0,
-      losses: t1.record?.losses ?? 0,
-      color: teamColor(t1.code),
-    },
-    team2: {
-      name: t2.name,
-      shortName: t2.code,
-      image: t2.image || t2.alternativeImage,
-      regionFlag: regionFlag(t2.origin?.region ?? leagueRegion),
-      wins: t2.record?.wins ?? 0,
-      losses: t2.record?.losses ?? 0,
-      color: teamColor(t2.code),
-    },
-  };
+function isLeagueMatch(event: LoLApiScheduleEvent, leagueId: string): boolean {
+  return event.type === "match" && event.league.id === leagueId;
 }
 
-function isCompletedMatchEvent(event: LoLApiScheduleEvent): boolean {
-  return event.type === "match" && event.state === "completed" && event.match?.teams?.length === 2;
+function formatEta(startTime: string): string {
+  const start = new Date(startTime).getTime();
+  if (!Number.isFinite(start)) return "TBD";
+  const diff = Math.max(0, start - Date.now());
+  const totalHours = Math.floor(diff / 3_600_000);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days > 0) return `${days}d ${hours}h`;
+  return `${hours}h`;
 }
 
-function formatYmd(iso: string): string {
-  const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return "TBD";
-  return date.toISOString().slice(0, 10).replace(/-/g, "/");
-}
-
-function buildPastMatchForTeam(event: LoLApiScheduleEvent, teamCode: string): PastMatchItem | null {
-  const [left, right] = event.match.teams;
-  const leftCode = left.code?.toUpperCase();
-  const rightCode = right.code?.toUpperCase();
-  const code = teamCode.toUpperCase();
-
-  const isLeft = leftCode === code;
-  const isRight = rightCode === code;
-  if (!isLeft && !isRight) return null;
-
-  const team = isLeft ? left : right;
-  const opponent = isLeft ? right : left;
-
-  return {
-    id: event.id ?? event.match.id,
-    scoreFor: team.result?.gameWins ?? 0,
-    scoreAgainst: opponent.result?.gameWins ?? 0,
-    opponentName: opponent.name,
-    opponentImage: opponent.image,
-    date: formatYmd(event.startTime),
-    won:
-      team.result?.outcome === "win" ||
-      (team.result?.gameWins ?? 0) > (opponent.result?.gameWins ?? 0),
-  };
-}
-
-export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EventDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
 
-
-  let matchData: MatchHeaderData;
-  let mapsData: GameResult[] = [];
-  let h2hCount = 0;
-  let h2hTeam1Wins = 0;
-  let h2hTeam2Wins = 0;
-  let team1Recent: PastMatchItem[] = [];
-  let team2Recent: PastMatchItem[] = [];
   try {
-    const [eventRes, scheduleRes] = await Promise.all([
-      getEventDetails(id),
-      getSchedule(),
+    const leaguesRes = await getLeagues();
+    const leagues = leaguesRes.data.leagues;
+    const league = leagues.find((entry: LoLApiLeague) => entry.id === id);
+    if (!league) notFound();
+
+    const [tournamentsRes, scheduleRes] = await Promise.all([
+      getTournamentsForLeague(league.id),
+      getSchedule([league.id]),
     ]);
 
-    const event = eventRes.data.event;
-    matchData = buildMatchHeaderData(event);
-    mapsData = buildGameResults(event);
+    const tournaments = tournamentsRes.data.leagues.flatMap(
+      (entry) => entry.tournaments,
+    );
+    const now = Date.now();
+    const selectedTournament: LoLApiTournament | undefined =
+      tournaments.find(
+        (tournament) => new Date(tournament.endDate).getTime() >= now,
+      ) ?? tournaments[0];
 
-    const [eventTeam1, eventTeam2] = event.match.teams;
-    const team1Code = eventTeam1.code.toUpperCase();
-    const team2Code = eventTeam2.code.toUpperCase();
+    const upcomingMatches = scheduleRes.data.schedule.events
+      .filter(
+        (event) =>
+          isLeagueMatch(event, league.id) && event.state === "unstarted",
+      )
+      .slice(0, 6);
 
-    const completed = scheduleRes.data.schedule.events
-      .filter(isCompletedMatchEvent)
-      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+    return (
+      <div className="min-h-screen bg-void">
+        <Navbar />
+        <EventTopBanner
+          leagueName={league.name}
+          leagueSlug={league.slug}
+          stage="Featured Tournament"
+          tournamentId={selectedTournament?.id}
+          leagueImage={league.image}
+          dateRangeLabel={formatTournamentDateRange(
+            selectedTournament?.startDate,
+            selectedTournament?.endDate,
+          )}
+          locationLabel="TBD"
+        />
 
-    const h2hMatches = completed.filter((scheduleEvent) => {
-      const [left, right] = scheduleEvent.match.teams;
-      const codes = new Set([left.code.toUpperCase(), right.code.toUpperCase()]);
-      return codes.has(team1Code) && codes.has(team2Code);
-    });
-
-    h2hCount = h2hMatches.length;
-    h2hTeam1Wins = h2hMatches.reduce((wins, scheduleEvent) => {
-      const item = buildPastMatchForTeam(scheduleEvent, team1Code);
-      return wins + (item?.won ? 1 : 0);
-    }, 0);
-    h2hTeam2Wins = h2hMatches.reduce((wins, scheduleEvent) => {
-      const item = buildPastMatchForTeam(scheduleEvent, team2Code);
-      return wins + (item?.won ? 1 : 0);
-    }, 0);
-
-    team1Recent = completed
-      .map((scheduleEvent) => buildPastMatchForTeam(scheduleEvent, team1Code))
-      .filter((item): item is PastMatchItem => item !== null)
-      .slice(0, 5);
-
-    team2Recent = completed
-      .map((scheduleEvent) => buildPastMatchForTeam(scheduleEvent, team2Code))
-      .filter((item): item is PastMatchItem => item !== null)
-      .slice(0, 5);
+        <section className="max-w-[1320px] mx-auto px-6 py-6">
+          <div className="px-1 pb-2">
+            <span className="section-label">Upcoming Matches</span>
+          </div>
+          <div className="border border-ink-mid bg-ink divide-y divide-ink-mid">
+            {upcomingMatches.length > 0 ? (
+              upcomingMatches.map((matchEvent) => {
+                const [team1, team2] = matchEvent.match.teams;
+                const eventId = matchEvent.id ?? matchEvent.match.id;
+                return (
+                  <Link
+                    key={eventId}
+                    href={`/matches/${eventId}`}
+                    className="px-4 py-3 flex items-center justify-between hover:bg-ink-light transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-body text-sm text-text-secondary truncate">
+                        {team1.name}{" "}
+                        <span className="text-text-faint mx-1">vs</span>{" "}
+                        {team2.name}
+                      </div>
+                      <div className="font-cond text-[10px] tracking-widest uppercase text-text-muted mt-1">
+                        {matchEvent.blockName}
+                      </div>
+                    </div>
+                    <span className="font-cond text-xs text-electric tabular-nums shrink-0">
+                      {formatEta(matchEvent.startTime)}
+                    </span>
+                  </Link>
+                );
+              })
+            ) : (
+              <p className="px-4 py-6 text-center font-body text-sm text-text-muted">
+                No upcoming matches found.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+    );
   } catch {
     notFound();
   }
-
-  return (
-    <div className="min-h-screen bg-void">
-      <Navbar />
-      <MatchHeader data={matchData!} />
-      <MatchMapsPanel
-        team1Name={matchData.team1.name}
-        team2Name={matchData.team2.name}
-        score1={matchData.score1}
-        score2={matchData.score2}
-        bestOf={parseInt(matchData.format.replace("Bo", ""), 10)}
-        maps={mapsData}
-      />
-      <EventHistoryPanel
-        team1={{ name: matchData.team1.name, image: matchData.team1.image }}
-        team2={{ name: matchData.team2.name, image: matchData.team2.image }}
-        h2hCount={h2hCount}
-        h2hTeam1Wins={h2hTeam1Wins}
-        h2hTeam2Wins={h2hTeam2Wins}
-        team1Recent={team1Recent}
-        team2Recent={team2Recent}
-      />
-    </div>
-  );
 }

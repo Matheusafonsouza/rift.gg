@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSchedule } from "@/hooks/useSchedule";
 import type { AppMatch } from "@/lib/lolesports/transforms";
 import { leagueColor } from "@/lib/lolesports/transforms";
 import { EVENTS } from "@/data/homepage";
+
+type LeagueLookup = { id: string; slug: string; name: string; image?: string; region?: string };
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -32,13 +34,18 @@ function MatchSkeleton() {
   );
 }
 
-function MatchRow({ match }: { match: AppMatch }) {
+function MatchRow({
+  match,
+  resolvedEventRouteId,
+}: {
+  match: AppMatch;
+  resolvedEventRouteId?: string;
+}) {
   const color = match.leagueColor;
+
   return (
-    <Link
-      href={`/events/${match.id}`}
-      className="hover-row group cursor-pointer"
-    >
+    <div className="hover-row group cursor-pointer">
+      <Link href={`/matches/${match.id}`} className="contents">
       <div
         className="w-0.5 h-8 rounded-full shrink-0 opacity-60 group-hover:opacity-100 transition-opacity"
         style={{ backgroundColor: color }}
@@ -130,7 +137,9 @@ function MatchRow({ match }: { match: AppMatch }) {
         )}
       </div>
 
-      <span
+      </Link>
+      <Link
+        href={resolvedEventRouteId ? `/events/${resolvedEventRouteId}` : "/events"}
         className="font-cond text-[9px] font-bold tracking-widest uppercase px-1.5 py-0.5 rounded-sm shrink-0"
         style={{
           color,
@@ -139,13 +148,17 @@ function MatchRow({ match }: { match: AppMatch }) {
         }}
       >
         {match.leagueSlug.replace(/-/g, " ").toUpperCase()}
-      </span>
-    </Link>
+      </Link>
+    </div>
   );
 }
 
 type SidebarEvent = {
   id: string;
+  routeId?: string;
+  leagueSlug?: string;
+  leagueName?: string;
+  image?: string;
   name: string;
   region: string;
   league: string;
@@ -158,30 +171,70 @@ function leagueLabel(slugOrKey: string): string {
   return slugOrKey.replace(/-/g, " ").toUpperCase();
 }
 
+function regionCode(region?: string): string {
+  const normalized = (region ?? "").toUpperCase();
+  if (normalized === "KOREA") return "KR";
+  if (normalized === "CHINA") return "CN";
+  if (normalized === "EUROPE") return "EU";
+  if (normalized === "NORTH AMERICA") return "NA";
+  if (normalized === "BRAZIL") return "BR";
+  if (normalized === "JAPAN") return "JP";
+  if (normalized === "OCEANIA") return "OCE";
+  if (normalized === "INTERNATIONAL") return "INT";
+  return normalized || "INT";
+}
+
+function formatShortDate(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "TBD";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function buildDateRange(startIso?: string, endIso?: string): string | undefined {
+  if (!startIso || !endIso) return undefined;
+  return `${formatShortDate(startIso)} - ${formatShortDate(endIso)}`;
+}
+
 function buildLeagueEvents(matches: AppMatch[], isLive: boolean): SidebarEvent[] {
-  const byLeague = new Map<string, AppMatch>();
+  const byLeague = new Map<string, AppMatch[]>();
 
   for (const match of matches) {
-    if (!byLeague.has(match.leagueSlug)) {
-      byLeague.set(match.leagueSlug, match);
-    }
+    const existing = byLeague.get(match.leagueSlug) ?? [];
+    existing.push(match);
+    byLeague.set(match.leagueSlug, existing);
   }
 
-  return Array.from(byLeague.values()).map((match) => ({
-    id: `${isLive ? "live" : "ongoing"}-${match.leagueSlug}`,
-    name: match.leagueName,
-    region: leagueLabel(match.leagueSlug),
-    league: leagueLabel(match.leagueSlug),
+  return Array.from(byLeague.entries()).map(([leagueSlug, leagueMatches]) => {
+    const first = leagueMatches[0];
+    const sortedTimes = leagueMatches
+      .map((m) => new Date(m.startTime).getTime())
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b);
+
+    const startIso = sortedTimes.length > 0 ? new Date(sortedTimes[0]).toISOString() : undefined;
+    const endIso = sortedTimes.length > 0 ? new Date(sortedTimes[sortedTimes.length - 1]).toISOString() : undefined;
+
+    return {
+    id: `${isLive ? "live" : "ongoing"}-${leagueSlug}`,
+    routeId: first.leagueId,
+    leagueSlug,
+    leagueName: first.leagueName,
+    image: first.leagueImage,
+    name: first.leagueName,
+    region: leagueLabel(leagueSlug),
+    league: leagueLabel(leagueSlug),
+    dateRange: buildDateRange(startIso, endIso),
     isLive,
-    phase: match.blockName || (isLive ? "Live" : "Season"),
-  }));
+    phase: first.blockName || (isLive ? "Live" : "Season"),
+    };
+  });
 }
 
 function EventRow({ event }: { event: SidebarEvent }) {
   const isUpcoming = !event.isLive && !event.phase;
   const color = leagueColor(event.league);
   return (
-    <div className="hover-row group cursor-pointer">
+    <Link href={event.routeId ? `/events/${event.routeId}` : "/events"} className="hover-row group cursor-pointer">
       <div
         className="w-0.5 h-9 rounded-full shrink-0"
         style={{
@@ -189,28 +242,30 @@ function EventRow({ event }: { event: SidebarEvent }) {
           opacity: isUpcoming ? 0.35 : 0.7,
         }}
       />
+      {event.image ? (
+        <img
+          src={event.image}
+          alt=""
+          className="w-4 h-4 object-contain shrink-0"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = "none";
+          }}
+        />
+      ) : (
+        <div className="w-4 h-4 rounded-full border border-ink-mid bg-void shrink-0" />
+      )}
       <div className="flex-1 min-w-0">
         <div className="font-body text-xs font-medium text-text-secondary group-hover:text-text-primary truncate transition-colors">
           {event.name}
         </div>
         <div className="font-cond text-[10px] text-text-muted mt-0.5 truncate">
-          {event.isLive ? (
-            <span className="text-crimson font-semibold tracking-wide">
-              {event.phase}
-            </span>
-          ) : (
-            event.dateRange || event.phase
-          )}
+          <span className="tracking-widest uppercase">{event.region}</span>
+          {(event.dateRange || event.phase) && <span className="mx-1">·</span>}
+          {event.dateRange || event.phase}
         </div>
       </div>
-      <span
-        className="font-cond text-[9px] font-bold tracking-widest uppercase shrink-0"
-        style={{ color, opacity: isUpcoming ? 0.5 : 1 }}
-      >
-        {event.region}
-      </span>
       {event.isLive && <span className="live-dot shrink-0" />}
-    </div>
+    </Link>
   );
 }
 
@@ -220,14 +275,133 @@ function isUpcomingEvent(e: (typeof EVENTS)[number]) {
 
 export default function RightSidebar() {
   const { data, isLoading, error, refresh } = useSchedule();
+  const [leagueLookup, setLeagueLookup] = useState<LeagueLookup[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadLeagues = async () => {
+      try {
+        const res = await fetch("/api/leagues");
+        if (!res.ok) return;
+        const json = await res.json() as { leagues?: LeagueLookup[] };
+        if (mounted) {
+          setLeagueLookup(json.leagues ?? []);
+        }
+      } catch {
+        // silent fallback: links use /events when league id cannot be resolved
+      }
+    };
+
+    void loadLeagues();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const leagueIdBySlug = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      map.set(league.slug.toLowerCase(), league.id);
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const leagueIdByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      map.set(league.name.toLowerCase(), league.id);
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const leagueRegionById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      if (league.region) map.set(league.id, regionCode(league.region));
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const leagueRegionBySlug = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      if (league.region) map.set(league.slug.toLowerCase(), regionCode(league.region));
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const leagueImageById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      if (league.image) map.set(league.id, league.image);
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const leagueImageBySlug = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      if (league.image) map.set(league.slug.toLowerCase(), league.image);
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const leagueImageByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const league of leagueLookup) {
+      if (league.image) map.set(league.name.toLowerCase(), league.image);
+    }
+    return map;
+  }, [leagueLookup]);
+
+  const resolveLeagueId = (routeId?: string, slug?: string, name?: string): string | undefined => {
+    if (routeId) return routeId;
+    if (slug) {
+      const bySlug = leagueIdBySlug.get(slug.toLowerCase());
+      if (bySlug) return bySlug;
+    }
+    if (name) {
+      const byName = leagueIdByName.get(name.toLowerCase());
+      if (byName) return byName;
+    }
+    return undefined;
+  };
+
+  const resolveLeagueImage = (routeId?: string, slug?: string, name?: string): string | undefined => {
+    if (routeId) {
+      const byId = leagueImageById.get(routeId);
+      if (byId) return byId;
+    }
+    if (slug) {
+      const bySlug = leagueImageBySlug.get(slug.toLowerCase());
+      if (bySlug) return bySlug;
+    }
+    if (name) {
+      const byName = leagueImageByName.get(name.toLowerCase());
+      if (byName) return byName;
+    }
+    return undefined;
+  };
+
+  const resolveLeagueRegion = (fallbackRegion?: string, routeId?: string, slug?: string): string => {
+    if (routeId) {
+      const byId = leagueRegionById.get(routeId);
+      if (byId) return byId;
+    }
+    if (slug) {
+      const bySlug = leagueRegionBySlug.get(slug.toLowerCase());
+      if (bySlug) return bySlug;
+    }
+    return fallbackRegion ?? "INT";
+  };
 
   const liveMatches = data?.live ?? [];
   const upcomingMatches = data?.upcoming ?? [];
   const completedMatches = (data?.completed ?? []).slice(0, 5);
-  const displayMatches = [
+  const upcomingLiveMatches = [
     ...liveMatches,
     ...upcomingMatches.slice(0, 10),
-    ...completedMatches,
   ];
 
   const liveEvents = useMemo(
@@ -245,6 +419,13 @@ export default function RightSidebar() {
     .filter(isUpcomingEvent)
     .map((event) => ({
       id: event.id,
+      routeId: undefined,
+      leagueSlug: event.name.includes("Worlds")
+        ? "worlds"
+        : event.name.includes("MSI")
+          ? "msi"
+          : event.league.toLowerCase(),
+      leagueName: event.name,
       name: event.name,
       region: event.region,
       league: event.league,
@@ -283,11 +464,40 @@ export default function RightSidebar() {
 
       <div className="pb-2">
         {isLoading
-          ? Array.from({ length: 7 }).map((_, i) => <MatchSkeleton key={i} />)
-          : displayMatches.length > 0
-            ? displayMatches.map((m) => (
-                <MatchRow key={`${m.id}-${m.startTime}`} match={m} />
-              ))
+          ? (
+            <>
+              <div className="px-3 pt-1 pb-1 font-cond text-[10px] tracking-widest uppercase text-text-faint">Upcoming / Live</div>
+              {Array.from({ length: 4 }).map((_, i) => <MatchSkeleton key={`up-${i}`} />)}
+              <div className="px-3 pt-3 pb-1 font-cond text-[10px] tracking-widest uppercase text-text-faint">Completed</div>
+              {Array.from({ length: 3 }).map((_, i) => <MatchSkeleton key={`cp-${i}`} />)}
+            </>
+            )
+          : (upcomingLiveMatches.length > 0 || completedMatches.length > 0)
+            ? (
+              <>
+                <div className="px-3 pt-1 pb-1 font-cond text-[10px] tracking-widest uppercase text-text-faint">Upcoming / Live</div>
+                {upcomingLiveMatches.length > 0 ? upcomingLiveMatches.map((m) => (
+                  <MatchRow
+                    key={`${m.id}-${m.startTime}`}
+                    match={m}
+                    resolvedEventRouteId={resolveLeagueId(m.leagueId, m.leagueSlug, m.leagueName)}
+                  />
+                )) : (
+                  <p className="px-3 py-3 font-body text-xs text-text-muted text-center">No upcoming or live matches.</p>
+                )}
+
+                <div className="px-3 pt-3 pb-1 font-cond text-[10px] tracking-widest uppercase text-text-faint">Completed</div>
+                {completedMatches.length > 0 ? completedMatches.map((m) => (
+                  <MatchRow
+                    key={`completed-${m.id}-${m.startTime}`}
+                    match={m}
+                    resolvedEventRouteId={resolveLeagueId(m.leagueId, m.leagueSlug, m.leagueName)}
+                  />
+                )) : (
+                  <p className="px-3 py-3 font-body text-xs text-text-muted text-center">No completed matches.</p>
+                )}
+              </>
+              )
             : !error && (
                 <p className="px-3 py-4 font-body text-xs text-text-muted text-center">
                   No matches scheduled.
@@ -307,7 +517,15 @@ export default function RightSidebar() {
         <>
           <SectionLabel>Live Events</SectionLabel>
           {liveEvents.map((e) => (
-            <EventRow key={e.id} event={e} />
+            <EventRow
+              key={e.id}
+              event={{
+                ...e,
+                routeId: resolveLeagueId(e.routeId, e.leagueSlug, e.leagueName),
+                region: resolveLeagueRegion(e.region, e.routeId, e.leagueSlug),
+                image: resolveLeagueImage(e.routeId, e.leagueSlug, e.leagueName) ?? e.image,
+              }}
+            />
           ))}
         </>
       )}
@@ -315,14 +533,30 @@ export default function RightSidebar() {
       <SectionLabel>Ongoing Events</SectionLabel>
       <div className="pb-1">
         {ongoingEvents.map((e) => (
-          <EventRow key={e.id} event={e} />
+          <EventRow
+            key={e.id}
+            event={{
+              ...e,
+              routeId: resolveLeagueId(e.routeId, e.leagueSlug, e.leagueName),
+              region: resolveLeagueRegion(e.region, e.routeId, e.leagueSlug),
+              image: resolveLeagueImage(e.routeId, e.leagueSlug, e.leagueName) ?? e.image,
+            }}
+          />
         ))}
       </div>
 
       <SectionLabel>Upcoming Events</SectionLabel>
       <div className="pb-6">
         {upcomingEvents.map((e) => (
-          <EventRow key={e.id} event={e} />
+          <EventRow
+            key={e.id}
+            event={{
+              ...e,
+              routeId: resolveLeagueId(e.routeId, e.leagueSlug, e.leagueName),
+              region: resolveLeagueRegion(e.region, e.routeId, e.leagueSlug),
+              image: resolveLeagueImage(e.routeId, e.leagueSlug, e.leagueName) ?? e.image,
+            }}
+          />
         ))}
       </div>
     </aside>

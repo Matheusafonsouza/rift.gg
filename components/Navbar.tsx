@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const NAV_LINKS = [
   { label: "Forums",   href: "/forums"   },
@@ -34,8 +35,13 @@ function HexLogo() {
 }
 
 export default function Navbar() {
-  const [active, setActive] = useState("Forums");
+  const pathname = usePathname();
   const [search, setSearch] = useState("");
+
+  const isActiveLink = (href: string) => {
+    if (!pathname) return false;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   return (
     <header className="sticky top-0 z-50 h-[50px] bg-ink border-b border-ink-mid shadow-[0_2px_24px_rgba(0,0,0,0.5)]">
@@ -83,8 +89,7 @@ export default function Navbar() {
             <Link
               key={label}
               href={href}
-              onClick={() => setActive(label)}
-              className={`nav-item ${active === label ? "active" : ""}`}
+              className={`nav-item ${isActiveLink(href) ? "active" : ""}`}
             >
               {label}
             </Link>

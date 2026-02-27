@@ -93,12 +93,14 @@ export interface AppTeam {
 }
 
 export interface AppMatch {
-  id: string;                 // schedule event id (used by /events/[id])
+  id: string;                 // schedule event id (used by /matches/[id])
   startTime: string;          // ISO string
   relativeTime: string;       // e.g. "1d 4h", "Live", "Just ended"
   blockName: string;
   leagueName: string;
+  leagueId?: string;
   leagueSlug: string;
+  leagueImage?: string;
   leagueColor: string;
   team1: AppTeam;
   team2: AppTeam;
@@ -142,7 +144,9 @@ export function transformScheduleEvent(raw: LoLApiScheduleEvent): AppMatch {
     relativeTime: formatRelativeTime(start, now, raw.state),
     blockName:   raw.blockName,
     leagueName:  raw.league.name,
+    leagueId:    raw.league.id,
     leagueSlug:  raw.league.slug,
+    leagueImage: raw.league.image,
     leagueColor: leagueColor(raw.league.slug),
     bestOf:      raw.match.strategy.count,
     state:       raw.state,
