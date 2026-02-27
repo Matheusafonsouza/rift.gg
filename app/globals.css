@@ -1,0 +1,104 @@
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-cinzel: "Cinzel", Georgia, serif;
+  --font-barlow: "Barlow", system-ui, sans-serif;
+  --font-barlow-condensed: "Barlow Condensed", system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #070A13;
+    color: #9BAABB;
+    font-family: var(--font-barlow);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0D1117;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #C89B3C33;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #C89B3C66;
+  }
+}
+
+@layer components {
+  /* Hextech divider line */
+  .hex-divider {
+    @apply border-t border-ink-mid;
+  }
+
+  /* Section label */
+  .section-label {
+    @apply font-display text-2xs font-semibold tracking-widest uppercase text-gold/80;
+  }
+
+  /* Nav item */
+  .nav-item {
+    @apply font-body text-xs font-medium tracking-widest uppercase text-text-muted
+           flex items-center h-full px-4 border-b-2 border-transparent
+           hover:text-text-primary hover:border-gold/30
+           transition-all duration-200 cursor-pointer;
+  }
+  .nav-item.active {
+    @apply text-gold border-gold;
+  }
+
+  /* Hoverable row */
+  .hover-row {
+    @apply flex items-center gap-2 px-3 py-2 rounded cursor-pointer
+           hover:bg-ink-light transition-colors duration-150;
+  }
+
+  /* Live dot */
+  .live-dot {
+    @apply inline-block w-2 h-2 rounded-full bg-crimson animate-pulse-live shrink-0;
+  }
+
+  /* Region badge */
+  .region-badge {
+    @apply font-cond text-2xs font-bold tracking-widest uppercase
+           px-1.5 py-0.5 rounded-sm bg-ink-light text-text-muted;
+  }
+
+  /* Match time */
+  .match-time {
+    @apply font-cond text-xs font-medium text-electric tabular-nums;
+  }
+
+  /* Gold button */
+  .btn-gold {
+    @apply bg-gold-shimmer font-body text-xs font-bold tracking-widest uppercase
+           text-void px-4 py-1.5 rounded-sm
+           hover:opacity-90 transition-opacity duration-150 cursor-pointer;
+    background: linear-gradient(135deg, #C89B3C, #a07828);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
