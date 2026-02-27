@@ -10,7 +10,9 @@ import { transformScheduleEvent } from "@/lib/lolesports/transforms";
 export async function GET() {
   try {
     const raw = await getLive();
-    const events = raw.data.schedule.events.map(transformScheduleEvent);
+    const events = raw.data.schedule.events
+      .filter((event) => event.type === "match" && event.match?.teams?.length === 2)
+      .map(transformScheduleEvent);
 
     return NextResponse.json(
       { live: events, count: events.length },

@@ -149,6 +149,53 @@ export interface LoLApiGetStandingsResponse {
   };
 }
 
+// ─── Event Details ────────────────────────────────────────────────────────────
+
+export interface LoLApiEventTeam {
+  id: string;
+  slug: string;
+  name: string;
+  code: string;
+  image: string;
+  alternativeImage?: string;
+  result?: LoLApiTeamResult;
+  record?: LoLApiTeamRecord;
+  origin?: { region: string };
+}
+
+export interface LoLApiGame {
+  id: string;
+  number: number;
+  state: MatchState;
+  teams: Array<{
+    id: string;
+    side: string;
+    result?: { gameWins: number };
+  }>;
+}
+
+export interface LoLApiEventDetails {
+  id: string;
+  startTime: string;
+  blockName: string;
+  state: MatchState;
+  type: string;
+  league: LoLApiLeagueRef & { region?: string };
+  tournament: { id: string };
+  match: {
+    id: string;
+    teams: [LoLApiEventTeam, LoLApiEventTeam];
+    strategy: LoLApiStrategy;
+    games?: LoLApiGame[];
+  };
+}
+
+export interface LoLApiGetEventDetailsResponse {
+  data: {
+    event: LoLApiEventDetails;
+  };
+}
+
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
 export interface LoLApiPlayerHandle {

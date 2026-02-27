@@ -53,6 +53,22 @@ export function regionFlag(region: string): string {
   return REGION_FLAGS[region?.toUpperCase()] ?? "🌍";
 }
 
+/**
+ * Returns a stable accent color for a team based on its short code.
+ * Used when the API doesn't provide a team brand color.
+ */
+export function teamColor(code: string): string {
+  const palette = [
+    "#E84057", "#0BC4E3", "#1FBF6E", "#9b59b6",
+    "#f97316", "#C89B3C", "#1e90ff", "#f59e0b",
+  ];
+  let hash = 0;
+  for (let i = 0; i < code.length; i++) {
+    hash = code.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return palette[Math.abs(hash) % palette.length];
+}
+
 // ─── App-level types ──────────────────────────────────────────────────────────
 
 export interface AppLeague {
@@ -77,7 +93,7 @@ export interface AppTeam {
 }
 
 export interface AppMatch {
-  id: string;
+  id: string;                 // schedule event id (used by /events/[id])
   startTime: string;          // ISO string
   relativeTime: string;       // e.g. "1d 4h", "Live", "Just ended"
   blockName: string;
@@ -121,7 +137,7 @@ export function transformScheduleEvent(raw: LoLApiScheduleEvent): AppMatch {
   const start = new Date(raw.startTime).getTime();
 
   return {
-    id:          raw.match.id,
+    id:          raw.id ?? raw.match.id,
     startTime:   raw.startTime,
     relativeTime: formatRelativeTime(start, now, raw.state),
     blockName:   raw.blockName,

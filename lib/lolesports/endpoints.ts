@@ -16,6 +16,7 @@ import type {
   LoLApiGetTournamentsResponse,
   LoLApiGetStandingsResponse,
   LoLApiGetTeamsResponse,
+  LoLApiGetEventDetailsResponse,
 } from "./api-types";
 
 // ─── Leagues ──────────────────────────────────────────────────────────────────
@@ -107,5 +108,19 @@ export async function getTeams(slug?: string): Promise<LoLApiGetTeamsResponse> {
     "getTeams",
     params,
     { revalidate: REVALIDATE_LEAGUES, tags: ["teams", ...(slug ? [`team-${slug}`] : [])] }
+  );
+}
+
+// ─── Event Details ────────────────────────────────────────────────────────────
+
+/**
+ * Fetch full details for a single match event.
+ * @param matchId - The match ID (e.g. from AppMatch.id)
+ */
+export async function getEventDetails(matchId: string): Promise<LoLApiGetEventDetailsResponse> {
+  return lolesportsFetch<LoLApiGetEventDetailsResponse>(
+    "getEventDetails",
+    { id: matchId },
+    { revalidate: REVALIDATE_SCHEDULE, tags: ["event", `event-${matchId}`] }
   );
 }

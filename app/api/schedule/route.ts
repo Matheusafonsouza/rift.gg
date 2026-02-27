@@ -33,8 +33,12 @@ export async function GET(req: NextRequest) {
       getLive(),
     ]);
 
-    const allEvents = scheduleRes.data.schedule.events.map(transformScheduleEvent);
-    const liveEvents = liveRes.data.schedule.events.map(transformScheduleEvent);
+    const allEvents = scheduleRes.data.schedule.events
+      .filter((event) => event.type === "match" && event.match?.teams?.length === 2)
+      .map(transformScheduleEvent);
+    const liveEvents = liveRes.data.schedule.events
+      .filter((event) => event.type === "match" && event.match?.teams?.length === 2)
+      .map(transformScheduleEvent);
 
     // Split into upcoming / completed / live
     const upcoming  = allEvents.filter((e) => e.state === "unstarted");
