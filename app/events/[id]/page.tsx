@@ -70,11 +70,12 @@ export default async function EventDetailPage({
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const activeTab = resolvedSearchParams?.tab === "matches" ? "matches" : "overview";
   const statusFilter =
+    resolvedSearchParams?.status === "all" ||
     resolvedSearchParams?.status === "upcoming" ||
     resolvedSearchParams?.status === "live" ||
     resolvedSearchParams?.status === "completed"
       ? resolvedSearchParams.status
-      : "all";
+      : "upcoming";
 
   try {
     const leaguesRes = await getLeagues();
@@ -143,7 +144,7 @@ export default async function EventDetailPage({
               Overview
             </Link>
             <Link
-              href={`/events/${id}?tab=matches`}
+              href={`/events/${id}?tab=matches&status=upcoming`}
               className={`px-4 py-1.5 font-cond text-xs tracking-widest uppercase border-l border-ink-mid transition-colors ${
                 activeTab === "matches"
                   ? "bg-ink-light text-text-primary"
